@@ -5,10 +5,11 @@
   "description": "NuvyraHub marketplace — Next.js UI and Express API",
   "scripts": {
     "setup": "npm --prefix ../mypackage install && npm install",
-    "dev": "concurrently -k -n api,web -c cyan,magenta \"node backend/src/index.js\" \"next start\"",
-    "build": "next build",
+    "dev": "concurrently -k -n api,web -c cyan,magenta \"node --watch backend/src/index.js\" \"next start\"",
     "start": "concurrently -k -n api,web -c cyan,magenta \"node backend/src/index.js\" \"next start\"",
-    "lint": "eslint"
+    "build": "next build",
+    "lint": "eslint",
+    "test": "node --test backend/tests/*.test.js"
   },
   "dependencies": {
     "@fontsource/archivo": "^5.3.0",

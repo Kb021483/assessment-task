@@ -13,12 +13,14 @@ export function SiteHeader({ variant = "marketing" }) {
     variant === "marketing"
       ? [
           { href: "/marketplace", label: "Explore Models" },
+          { href: "/purchases", label: "Purchases" },
           { href: "/#how-it-works", label: "How it Works" },
           { href: "/pricing", label: "Pricing" },
           { href: "/#how-it-works", label: "Documentation" },
         ]
       : [
           { href: "/marketplace", label: "Explore Models" },
+          { href: "/purchases", label: "Purchases" },
           { href: "/dashboard", label: "Creator Dashboard" },
           { href: "/upload", label: "Upload Model" },
           { href: "/#how-it-works", label: "Docs" },
@@ -86,7 +88,11 @@ export function SiteHeader({ variant = "marketing" }) {
                 onClick={onConnectWallet}
                 className="btn-glow rounded-md bg-accent px-4 py-2.5 font-[family-name:JetBrains_Mono] text-[12px] font-bold tracking-wide text-white transition hover:bg-accent-deep disabled:opacity-60"
               >
-                {walletLabel ? walletLabel.toUpperCase() : busy ? "CONNECTING…" : "CONNECT WALLET"}
+                {walletLabel
+                  ? walletLabel.toUpperCase()
+                  : busy
+                    ? "CONNECTING…"
+                    : "CONNECT WALLET"}
               </button>
             </>
           ) : (

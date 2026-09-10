@@ -1,2 +1,6 @@
-.vscod
+.vscode
 node_modules
+.next
+package-lock.json
+contracts-project/artifacts/build-info
+contracts-project/cache

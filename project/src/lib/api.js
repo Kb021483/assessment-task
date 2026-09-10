@@ -16,7 +16,8 @@ async function request(path, init) {
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
     const message =
-      (data && (data.message || data.error)) || `Request failed (${res.status})`;
+      (data && (data.message || data.error)) ||
+      `Request failed (${res.status})`;
     throw new Error(String(message));
   }
   return data;
@@ -74,6 +75,15 @@ export const api = {
     request(`/api/chain/acquire/${slug}`, {
       method: "POST",
       body: JSON.stringify({ mode: "confirm", ...body }),
+    }),
+  purchases: (walletAddress) =>
+    request(
+      `/api/purchases${walletAddress ? `?walletAddress=${walletAddress}` : ""}`,
+    ),
+  verifyPurchase: (body) =>
+    request("/api/purchases/verify", {
+      method: "POST",
+      body: JSON.stringify(body),
     }),
 };
 
