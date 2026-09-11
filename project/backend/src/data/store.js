@@ -64,7 +64,8 @@ const seedModels = [
     priceEth: 0.15,
     price: eth(0.15),
     image: "/assets/asset-c.svg",
-    description: "Customizable Nuvyra voice synthesis with low-latency streaming.",
+    description:
+      "Customizable Nuvyra voice synthesis with low-latency streaming.",
     version: "v2.4",
     status: "Compiling",
     createdAt: "2026-06-01T10:00:00.000Z",
@@ -141,7 +142,13 @@ const seedModels = [
     address: "0x8f4b...v320",
     category: "Image Generation · Diffusion",
     categorySlug: "image-gen",
-    tags: ["image-gen", "diffusion", "photorealism", "text-to-image", "vinci-labs"],
+    tags: [
+      "image-gen",
+      "diffusion",
+      "photorealism",
+      "text-to-image",
+      "vinci-labs",
+    ],
     rating: 4.8,
     downloads: "12.4K",
     downloadsCount: 12400,
@@ -180,6 +187,7 @@ const store = {
   sessions: [],
   acquisitions: [],
   inferences: [],
+  purchases: [],
 };
 
 function slugify(input) {
@@ -298,6 +306,139 @@ function createSession(userId) {
   return session;
 }
 
+function getPurchasesByWallet(walletAddress) {
+  if (!walletAddress) return [...store.purchases];
+  const target = walletAddress.toLowerCase();
+  return store.purchases.filter(
+    (p) => (p.buyerWalletAddress || p.buyer || "").toLowerCase() === target,
+  );
+}
+
+function getPurchaseByTx(txHash) {
+  if (!txHash) return null;
+  const target = txHash.toLowerCase();
+  return (
+    store.purchases.find(
+      (p) =>
+        (p.blockchainTransactionHash || p.txHash || "").toLowerCase() ===
+        target,
+    ) || null
+  );
+}
+
+function savePurchase(purchaseInput) {
+  const txHash = (
+    purchaseInput.blockchainTransactionHash ||
+    purchaseInput.txHash ||
+    ""
+  ).toLowerCase();
+  const tokenId =
+    purchaseInput.tokenId != null ? Number(purchaseInput.tokenId) : null;
+
+  const existing = store.purchases.find((p) => {
+    const pTx = (p.blockchainTransactionHash || p.txHash || "").toLowerCase();
+    if (pTx !== txHash) return false;
+    if (tokenId != null && p.tokenId != null) {
+      return Number(p.tokenId) === tokenId;
+    }
+    return true;
+  });
+
+  if (existing) {
+    return { isNew: false, purchase: existing };
+  }
+
+  const modelSlug = purchaseInput.modelSlug || purchaseInput.model?.slug;
+  const model = modelSlug ? findModel(modelSlug) : null;
+
+  const record = {
+    id: purchaseInput.id || randomUUID(),
+    buyerWalletAddress: purchaseInput.buyerWalletAddress || purchaseInput.buyer,
+    modelIdentifier:
+      modelSlug || (tokenId != null ? `token-${tokenId}` : "unknown"),
+    tokenId: tokenId,
+    modelSlug: modelSlug || null,
+    model: model
+      ? {
+          slug: model.slug,
+          name: model.name,
+          creator: model.creator,
+          category: model.category,
+          categorySlug: model.categorySlug,
+          description: model.description,
+          image: model.image,
+          price: model.price,
+          priceEth: model.priceEth,
+          rating: model.rating,
+        }
+      : purchaseInput.model || null,
+    purchaseAmountEth:
+      purchaseInput.purchaseAmountEth != null
+        ? purchaseInput.purchaseAmountEth
+        : model?.priceEth || 0,
+    purchaseAmountWei:
+      purchaseInput.purchaseAmountWei != null
+        ? String(purchaseInput.purchaseAmountWei)
+        : null,
+    blockchainTransactionHash:
+      purchaseInput.blockchainTransactionHash || purchaseInput.txHash,
+    blockNumber:
+      purchaseInput.blockNumber != null
+        ? Number(purchaseInput.blockNumber)
+        : null,
+    purchaseTimestamp:
+      purchaseInput.purchaseTimestamp || new Date().toISOString(),
+    licenseQuantity:
+      purchaseInput.licenseQuantity != null
+        ? Number(purchaseInput.licenseQuantity)
+        : 1,
+    confirmation: {
+      status: purchaseInput.status || "confirmed",
+      blockNumber:
+        purchaseInput.blockNumber != null
+          ? Number(purchaseInput.blockNumber)
+          : null,
+      confirmations:
+        purchaseInput.confirmations != null
+          ? Number(purchaseInput.confirmations)
+          : 1,
+      contractAddress: purchaseInput.contractAddress || null,
+      chainId:
+        purchaseInput.chainId != null ? Number(purchaseInput.chainId) : 31337,
+    },
+    createdAt: new Date().toISOString(),
+  };
+
+  store.purchases.unshift(record);
+
+  // Maintain consistency with store.acquisitions and model downloads
+  const alreadyAcquired = store.acquisitions.some(
+    (a) =>
+      (a.txHash || "").toLowerCase() === txHash &&
+      (tokenId == null || a.tokenId == null || Number(a.tokenId) === tokenId),
+  );
+
+  if (!alreadyAcquired) {
+    store.acquisitions.push({
+      id: randomUUID(),
+      modelSlug: modelSlug || record.modelIdentifier,
+      userId: purchaseInput.userId || "web3-buyer",
+      walletAddress: record.buyerWalletAddress,
+      priceEth: record.purchaseAmountEth,
+      txHash: record.blockchainTransactionHash,
+      tokenId: record.tokenId,
+      createdAt: record.purchaseTimestamp,
+      onChain: true,
+    });
+
+    if (model) {
+      bumpDownloads(model);
+    }
+  }
+
+  return { isNew: true, purchase: record };
+}
+
 module.exports = {
   store,
   slugify,
@@ -308,4 +449,7 @@ module.exports = {
   createModel,
   getSession,
   createSession,
+  getPurchasesByWallet,
+  getPurchaseByTx,
+  savePurchase,
 };

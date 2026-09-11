@@ -12,6 +12,11 @@ const {
 } = require("../chain/marketplace");
 const { findModel, store } = require("../data/store");
 const { optionalAuth } = require("../middleware/auth");
+const {
+  verifyAndRecordPurchase,
+  validateAddress,
+  TransactionVerificationError,
+} = require("../chain/transactionTracker");
 
 const chainRouter = Router();
 
@@ -40,7 +45,9 @@ chainRouter.get("/listing/:slug", async (req, res) => {
   try {
     const listing = await getOnChainListing(req.params.slug);
     if (!listing) {
-      res.status(404).json({ error: "NotFound", message: "No on-chain listing" });
+      res
+        .status(404)
+        .json({ error: "NotFound", message: "No on-chain listing" });
       return;
     }
     res.json({ listing });
@@ -55,7 +62,9 @@ chainRouter.get("/listing/:slug", async (req, res) => {
 chainRouter.post("/list/:slug", optionalAuth, async (req, res) => {
   const model = findModel(req.params.slug);
   if (!model) {
-    res.status(404).json({ error: "NotFound", message: "Model not found in API" });
+    res
+      .status(404)
+      .json({ error: "NotFound", message: "Model not found in API" });
     return;
   }
 
@@ -103,7 +112,9 @@ chainRouter.post("/acquire/:slug", optionalAuth, async (req, res) => {
 
   const parsed = acquireSchema.safeParse(req.body ?? {});
   if (!parsed.success) {
-    res.status(400).json({ error: "ValidationError", details: parsed.error.flatten() });
+    res
+      .status(400)
+      .json({ error: "ValidationError", details: parsed.error.flatten() });
     return;
   }
 
@@ -112,7 +123,8 @@ chainRouter.post("/acquire/:slug", optionalAuth, async (req, res) => {
     if (!listing) {
       res.status(404).json({
         error: "NotListedOnChain",
-        message: "Model is not listed on-chain yet. Call POST /api/chain/list/:slug first.",
+        message:
+          "Model is not listed on-chain yet. Call POST /api/chain/list/:slug first.",
       });
       return;
     }
@@ -128,27 +140,53 @@ chainRouter.post("/acquire/:slug", optionalAuth, async (req, res) => {
 
     if (parsed.data.mode === "confirm") {
       if (!parsed.data.txHash) {
-        res.status(400).json({ error: "ValidationError", message: "txHash required" });
+        res
+          .status(400)
+          .json({ error: "ValidationError", message: "txHash required" });
         return;
       }
-      const acquisition = {
-        id: randomUUID(),
-        modelSlug: model.slug,
-        userId: req.user?.id || "wallet-user",
-        walletAddress: parsed.data.walletAddress || "unknown",
-        priceEth: model.priceEth,
-        txHash: parsed.data.txHash,
-        createdAt: new Date().toISOString(),
-        onChain: true,
-      };
-      store.acquisitions.push(acquisition);
-      res.status(201).json({ mode: "confirm", acquisition, listing, model });
-      return;
+      try {
+        const { isNew, purchase } = await verifyAndRecordPurchase(
+          parsed.data.txHash,
+          {
+            expectedBuyer: parsed.data.walletAddress,
+          },
+        );
+        res.status(isNew ? 201 : 200).json({
+          mode: "confirm",
+          verified: true,
+          isNew,
+          purchase,
+          listing,
+          model,
+        });
+        return;
+      } catch (verifyError) {
+        const statusCode = verifyError.statusCode || 400;
+        res.status(statusCode).json({
+          error: verifyError.code || "VerificationFailed",
+          message: verifyError.message,
+        });
+        return;
+      }
     }
 
-    // relay: backend signer pays/acquires (demo)
     const result = await acquireLicenseOnChain(model.slug);
-    const acquisition = {
+    let purchaseRecord = null;
+    if (result.txHash && !result.alreadyOwned) {
+      try {
+        const { purchase } = await verifyAndRecordPurchase(result.txHash, {
+          expectedBuyer: result.buyer,
+        });
+        purchaseRecord = purchase;
+      } catch (err) {
+        console.warn(
+          `[chain.js] Background verification warning for relay tx: ${err.message}`,
+        );
+      }
+    }
+
+    const acquisition = purchaseRecord || {
       id: randomUUID(),
       modelSlug: model.slug,
       userId: req.user?.id || "relay-buyer",
@@ -158,12 +196,16 @@ chainRouter.post("/acquire/:slug", optionalAuth, async (req, res) => {
       createdAt: new Date().toISOString(),
       onChain: true,
     };
-    store.acquisitions.push(acquisition);
-    model.downloadsCount += result.alreadyOwned ? 0 : 1;
+    if (!purchaseRecord) {
+      store.acquisitions.push(acquisition);
+      model.downloadsCount += result.alreadyOwned ? 0 : 1;
+    }
+
     res.status(201).json({
       mode: "relay",
       ...result,
       acquisition,
+      purchase: purchaseRecord,
       model,
       message: result.alreadyOwned
         ? "Wallet already holds license"

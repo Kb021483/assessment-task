@@ -6,7 +6,9 @@ const { authRouter } = require("./routes/auth");
 const { chainRouter } = require("./routes/chain");
 const { dashboardRouter } = require("./routes/dashboard");
 const { metaRouter, modelsRouter } = require("./routes/models");
+const { purchasesRouter } = require("./routes/purchases");
 const { getChainStatus } = require("./chain/marketplace");
+const { transactionTracker } = require("./chain/transactionTracker");
 
 const app = express();
 const PORT = Number(process.env.PORT || 4000);
@@ -55,6 +57,9 @@ app.get("/", async (_req, res) => {
       chainListing: "GET /api/chain/listing/:slug",
       chainList: "POST /api/chain/list/:slug",
       chainAcquire: "POST /api/chain/acquire/:slug",
+      purchases: "GET /api/purchases?walletAddress=0x...",
+      purchasesByWallet: "GET /api/purchases/:walletAddress",
+      verifyPurchase: "POST /api/purchases/verify",
       categories: "GET /api/categories",
       tags: "GET /api/tags",
       signup: "POST /api/auth/signup",
@@ -71,6 +76,7 @@ app.use("/api/models", modelsRouter);
 app.use("/api/auth", authRouter);
 app.use("/api/dashboard", dashboardRouter);
 app.use("/api/chain", chainRouter);
+app.use("/api/purchases", purchasesRouter);
 
 app.use((err, _req, res, _next) => {
   const status = Number(err.status || err.statusCode) || 500;
@@ -81,6 +87,16 @@ app.use((err, _req, res, _next) => {
   });
 });
 
-app.listen(PORT, "0.0.0.0", () => {
-  console.log(`Server is running on port ${PORT}`);
-});
+let server;
+if (require.main === module) {
+  server = app.listen(PORT, "0.0.0.0", async () => {
+    console.log(`Server is running on port ${PORT}`);
+    try {
+      await transactionTracker.start();
+    } catch (err) {
+      console.warn(`[index.js] Transaction tracker deferred startup: ${err.message}`);
+    }
+  });
+}
+
+module.exports = { app, server };
